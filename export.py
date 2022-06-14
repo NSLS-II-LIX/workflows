@@ -42,10 +42,10 @@ with Flow("export") as flow:
     run_export_lix(uids)
 
 
-def h5_fix_sample_name(fn_h5):
+def h5_fix_sample_name(filename_h5):
     """ the hdf5 file is assumed to have top-level groups that each corresponds to a sample
     """
-    f = h5py.File(fn_h5, "r+")
+    f = h5py.File(filename_h5, "r+")
     grps = list(f.keys())
     for g in grps:
         header = json.loads(f[g].attrs.get('start'))
@@ -80,7 +80,7 @@ def compile_replace_res_path(h):
     return ret
 
 
-def pack_h5(uids, filepath='', fn=None, fix_sample_name=True, stream_name=None,
+def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=None,
             attach_uv_file=False, delete_old_file=True, include_motor_pos=True, debug=False,
             fields=['em2_current1_mean_value', 'em2_current2_mean_value',
                     'em1_sum_all_mean_value', 'em2_sum_all_mean_value', 'em2_ts_SumAll', 'em1_ts_SumAll',
@@ -95,25 +95,25 @@ def pack_h5(uids, filepath='', fn=None, fix_sample_name=True, stream_name=None,
         this is i
     """
 
-    if isinstance(uids, list):
-        if fn is None:
+    if len(runs) > 1:
+        if filename is None:
             raise Exception("a file name must be given for a list of uids.")
-        headers = [db[u] for u in uids]
-        pns = [h.start['plan_name'] for h in headers]
-        if not (pns[1:]==pns[:-1]):
-            raise Exception("mixed plan names in uids: %s" % pns)
+        #headers = [db[u] for u in uids]
+        plan_names = [run.start['plan_name'] for run in runs]
+        if len(set(plan_names)) > 1:
+            raise Exception("mixed plan names in uids: %s" % plan_names)
     else:
         header = db[uids]
-        if fn is None:
+        if filename is None:
             if "sample_name" in list(header.start.keys()):
-                fn = header.start['sample_name']
+                filename = header.start['sample_name']
             else:
                 fds = header.fields()
                 # find the first occurance of _file_file_name in fields
                 f = next((x for x in fds if "_file_file_name" in x), None)
                 if f is None:
                     raise Exception("could not automatically select a file name.")
-                fn = header.table(fields=[f])[f][1]
+                filename = header.table(fields=[f])[f][1]
         headers = [header]
 
     # if replace_res_path is not specified, try to figure out whether it is necessary
@@ -127,38 +127,38 @@ def pack_h5(uids, filepath='', fn=None, fix_sample_name=True, stream_name=None,
         for m in headers[0].start['motors']:
             fds += [m] #, m+"_user_setpoint"]
 
-    if fn[-3:]!='.h5':
-        fn += '.h5'
+    if filename[-3:]!='.h5':
+        filename += '.h5'
 
     if filepath!='':
         if not os.path.exists(filepath):
             raise Exception(f'{filepath} does not exist.')
-        fn = filepath+'/'+fn
+        filename = filepath+'/'+filename
 
     if delete_old_file:
         try:
-            os.remove(fn)
+            os.remove(filename)
         except OSError:
             pass
 
     print(fds)
-    hdf5_export(headers, fn, fields=fds, stream_name=stream_name, use_uid=False,
+    hdf5_export(headers, filename, fields=fds, stream_name=stream_name, use_uid=False,
                 replace_res_path=replace_res_path, debug=debug) #, mds= db.mds, use_uid=False)
 
     # by default the groups in the hdf5 file are named after the scan IDs
     if fix_sample_name:
-        h5_fix_sample_name(fn)
+        h5_fix_sample_name(filename)
 
     if attach_uv_file:
         # by default the UV file should be saved in /nsls2/xf16id1/Windows/
         # ideally this should be specified, as the default file is overwritten quickly
-        h5_attach_hplc(fn, '/nsls2/xf16id1/Windows/hplc_export.txt')
+        h5_attach_hplc(filename, '/nsls2/xf16id1/Windows/hplc_export.txt')
 
-    print(f"finished packing {fn} ...")
-    return fn
+    print(f"finished packing {filename} ...")
+    return filename
 
 
-def h5_attach_hplc(fn_h5, fn_hplc, chapter_num=-1, grp_name=None):
+def h5_attach_hplc(filename_h5, filename_hplc, chapter_num=-1, grp_name=None):
     """ the hdf5 is assumed to contain a structure like this:
         LIX_104
         == hplc
@@ -168,11 +168,11 @@ def h5_attach_hplc(fn_h5, fn_hplc, chapter_num=-1, grp_name=None):
         attach the HPLC data to the specified group
         if the group name is not give, attach to the first group in the h5 file
     """
-    f = h5py.File(fn_h5, "r+")
+    f = h5py.File(filename_h5, "r+")
     if grp_name == None:
         grp_name = list(f.keys())[0]
 
-    hdstr, dhplc = readShimadzuDatafile(fn_hplc, chapter_num=chapter_num )
+    hdstr, dhplc = readShimadzuDatafile(filename_hplc, chapter_num=chapter_num )
     # 3rd line of the header contains the HPLC data file name, which is based on the sample name
     sname = hdstr.split('\n')[2].split('\\')[-1][:-4]
     if grp_name!=sname:
@@ -221,7 +221,7 @@ def send_to_packing_queue_remote(uid, datatype, froot=data_file_path.gpfs, move_
     s.send(msg.encode('ascii'))
     s.close()
 
-def pack_and_process(run, data_type, filepath=""):
+def pack_and_process(runs, data_type, filepath=""):
 
     # useful for moving files from RAM disk to GPFS during fly scans
     #
@@ -234,13 +234,11 @@ def pack_and_process(run, data_type, filepath=""):
 
     if data_type not in ["multi", "sol", "mscan", "mfscan"]: # single UID
         if 'exit_status' not in run.stop.keys():
-            print(f"in complete header for {run.start['uid']}.")
+            print(f"in complete header for {runs[0].start['uid']}.")
             return
         if run.stop['exit_status'] != 'success': # the scan actually finished
-            print(f"scan {run.start['uid']} was not successful.")
+            print(f"scan {runs[0].start['uid']} was not successful.")
             return
-
-    print(f"packing: {data_type}, {run.start['uid']}, {filepath}")
 
     t0 = time.time()
     # if the filepath contains exp.h5, read detectors/qgrid from it
@@ -253,31 +251,30 @@ def pack_and_process(run, data_type, filepath=""):
 
     if data_type in ["multi", "sol", "mscan", "mfscan"]:
 
-        # TODO: Need to figure the below for batch scans
-        uids = run.start['uid'].split('|')
+        uids = [run.start['uid'] for run in runs]
 
         if data_type=="sol":
             sb_dict = json.loads(uids.pop())
         ## assume that the meta data contains the holderName
-        if 'holderName' not in list(db[uids[0]].start.keys()):
+        if 'holderName' not in list(runs[0].start.keys()):
             print("cannot find holderName from the header, using tmp.h5 as filename ...")
             fh5_name = "tmp.h5"
         else:
-            dir_name = db[uids[0]].start['holderName']
+            dir_name = runs[0].start['holderName']
             fh5_name = dir_name+'.h5'
-        fn = pack_h5_with_lock(uids, filepath, fn="tmp.h5")
-        if fn is not None and dt_exp is not None and data_type!="mscan":
+        filename = pack_h5(runs, filepath, filename="tmp.h5")
+        if filename is not None and dt_exp is not None and data_type!="mscan":
             print('processing ...')
             if data_type=="sol":
-                dt = h5sol_HT(fn, [dt_exp.detectors, dt_exp.qgrid])
+                dt = h5sol_HT(filename, [dt_exp.detectors, dt_exp.qgrid])
                 dt.assign_buffer(sb_dict)
                 dt.process(filter_data=True, sc_factor="auto", debug='quiet')
                 #dt.export_d1s(path=filepath+"/processed/")
             elif data_type=="multi":
-                dt = h5xs(fn, [dt_exp.detectors, dt_exp.qgrid], transField='em2_sum_all_mean_value')
+                dt = h5xs(filename, [dt_exp.detectors, dt_exp.qgrid], transField='em2_sum_all_mean_value')
                 dt.load_data(debug="quiet")
             elif data_type=="mfscan":
-                dt = h5xs(fn, [dt_exp.detectors, dt_exp.qgrid])
+                dt = h5xs(filename, [dt_exp.detectors, dt_exp.qgrid])
                 dt.load_data(debug="quiet")
             dt.fh5.close()
             del dt,dt_exp
@@ -289,22 +286,20 @@ def pack_and_process(run, data_type, filepath=""):
                 except:
                     pass
     elif data_type=="HPLC":
-        uids = [uid]
-        fn = pack_h5_with_lock(uid, filepath=filepath, attach_uv_file=True)
-        if fn is not None and dt_exp is not None:
+        filename = pack_h5(runs, filepath=filepath, attach_uv_file=True)
+        if filename is not None and dt_exp is not None:
             print('procesing ...')
-            dt = h5sol_HPLC(fn, [dt_exp.detectors, dt_exp.qgrid])
+            dt = h5sol_HPLC(filename, [dt_exp.detectors, dt_exp.qgrid])
             dt.process(debug='quiet')
             dt.fh5.close()
             del dt,dt_exp
     elif data_type=="flyscan" or data_type=="scan":
-        uids = [uid]
-        fn = pack_h5_with_lock(uid, filepath=filepath)
+        filename = pack_h5(runs, filepath=filepath)
     else:
         print(f"invalid data type: {data_type} .")
         return
 
-    if fn is None:
+    if filename is None:
         return # packing unsuccessful,
     print(f"{time.asctime()}: finished packing/processing, total time lapsed: {time.time()-t0:.1f} sec ...")
 
