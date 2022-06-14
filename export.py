@@ -392,14 +392,14 @@ def locate_h5_resource(res, replace_res_path, debug=False):
     return hf5, hf5["/entry/data/data"]
 
 
-def hdf5_export(headers, filename, debug=False,
+def hdf5_export(runs, filename, debug=False,
            stream_name=None, fields=None, bulk_h5_res=True,
            timestamps=True, use_uid=True, db=None, replace_res_path={}):
     """
     Create hdf5 file to preserve the structure of databroker.
     Parameters
     ----------
-    headers : a Header or a list of Headers
+    runs : a list of Runs
         objects retruned by the Data Broker
     filename : string
         path to a new or existing HDF5 file
@@ -425,37 +425,25 @@ def hdf5_export(headers, filename, debug=False,
         Now that the resource is a h5 file, copy data directly from the file 
         
     """
-    if isinstance(headers, Header):
-        headers = [headers]
-
     with h5py.File(filename, "w") as f:
         #f.swmr_mode = True # Unable to start swmr writing (file superblock version - should be at least 3)
-        for header in headers:
-            try:
-                db = header.db
-            except AttributeError:
-                pass
-            if db is None:
-                raise RuntimeError('db is not defined in header, so we need to input db explicitly.')
-                
-            res_docs = {}
-            for n,d in header.documents():
-                if n=="resource":
-                    res_docs[d['uid']] = d
-            if debug:
-                print("res_docs:\n", res_docs)
-                    
-            try:
-                descriptors = header.descriptors
-            except KeyError:
-                warnings.warn("Header with uid {header.uid} contains no "
-                              "data.".format(header), UserWarning)
-                continue
+        for run in runs:
+            #try:
+            #    db = header.db
+            #except AttributeError:
+            #    pass
+            #if db is None:
+            #    raise RuntimeError('db is not defined in header, so we need to input db explicitly.')
+            resource_docs = [doc for name, doc in run.documents() if name=='resource']
+            descriptor_docs = [doc for name, doc in run.documents() if name=='descriptor']
+            
             if use_uid:
-                top_group_name = header.start['uid']
+                top_group_name = run.start['uid']
             else:
-                top_group_name = 'data_' + str(header.start['scan_id'])
+                top_group_name = 'data_' + str(run.start['scan_id'])
+
             group = f.create_group(top_group_name)
+            # TODO: Update this function to use a run, instead of a header.
             _safe_attrs_assignment(group, header)
             for i, descriptor in enumerate(descriptors):
                 # make sure it's a dictionary and trim any spurious keys
@@ -477,13 +465,14 @@ def hdf5_export(headers, filename, debug=False,
                 _safe_attrs_assignment(desc_group, descriptor)
 
                 # fill can be bool or list
+                # TODO: fix this one.
                 events = list(header.events(stream_name=descriptor['name'], fill=False))
 
                 res_dict = {}
                 for k, v in list(events[0]['data'].items()):
                     if not isinstance(v, str):
                         continue
-                    if v.split('/')[0] in res_docs.keys():
+                    if v.split('/')[0] in resource_docs.keys():
                         res_dict[k] = []
                         for ev in events:
                             res_uid = ev['data'][k].split("/")[0]
@@ -514,7 +503,7 @@ def hdf5_export(headers, filename, debug=False,
                                                 fletcher32=True)
 
                     if key in list(res_dict.keys()):
-                        res = res_docs[res_dict[key][0]]
+                        res = resource_docs[res_dict[key][0]]
                         print(f"processing resource ...\n", res)
 
                         # pilatus data, change the path from ramdisk to IOC data directory
@@ -526,13 +515,13 @@ def hdf5_export(headers, filename, debug=False,
                             N = len(res_dict[key])
                             print(f"copying data from source h5 file(s) directly, N={N} ...")
                             if N==1:
-                                hf5, data = locate_h5_resource(res_docs[res_dict[key][0]], replace_res_path=rp, debug=debug)
+                                hf5, data = locate_h5_resource(resource_docs[res_dict[key][0]], replace_res_path=rp, debug=debug)
                                 data_group.copy(data, key)
                                 hf5.close()
                                 dataset = data_group[key]
                             else: # ideally this should never happen, only 1 hdf5 file/resource per scan
                                 for i in range(N):
-                                    hf5, data = locate_h5_resource(res_docs[res_dict[key][i]])
+                                    hf5, data = locate_h5_resource(resource_docs[res_dict[key][i]])
                                     if i==0:
                                         dataset = data_group.create_dataset(
                                                 key, shape=(N, *data.shape), 
@@ -631,6 +620,9 @@ def _safe_attrs_assignment(node, d):
         except TypeError:
             node.attrs[key] = json.dumps(value)
 
+
+# TODO: probably remove this function.
+# Databroker should be able to do this.
 def filter_fields(headers, unwanted_fields):
     """
     Filter out unwanted fields.
