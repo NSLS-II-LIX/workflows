@@ -29,7 +29,7 @@ def run_export_lix(uids):
     to start workflows via Prefect.
     """
 
-    tiled_client = databroker.from_profile("nsls2", username=None)["lix"]
+    tiled_client = databroker.from_profile("nsls2", username=None)['lix']['raw']
     runs = [tiled_client[uid] for uid in uids]
     task_info = {run.start['uid']:run.start['plan_name'] for run in runs}
 
@@ -83,6 +83,29 @@ def compile_replace_res_path(run):
     return ret
 
 
+def output_filename(runs, filename=None):
+    """
+    Determine the name for the output file.
+    """
+    if len(runs) > 1:
+        if filename is None:
+            raise Exception("a file name must be given for a list of uids.")
+    elif len(runs) == 1:
+        if filename is None:
+            if "sample_name" in list(header.start.keys()):
+                filename = runs[0].start['sample_name']
+            else:
+                # find the first occurance of _file_file_name in fields
+                # TODO: Don't use header.
+                f = next((x for x in header.fields() if "_file_file_name" in x), None)
+                if f is None:
+                    raise Exception("could not automatically select a file name.")
+                filename = header.table(fields=[f])[f][1]
+    if filename[-3:]!='.h5':
+        filename += '.h5'
+    return filename
+
+
 def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=None,
             attach_uv_file=False, delete_old_file=True, include_motor_pos=True, debug=False,
             fields=['em2_current1_mean_value', 'em2_current2_mean_value',
@@ -97,25 +120,16 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
         to avoid multiple processed requesting packaging, only 1 process is allowed at a given time
         this is i
     """
+    # Figure out the file name for the ourput file.
+    filename = output_filename(runs, filename=filename) 
 
-    if len(runs) > 1:
-        if filename is None:
-            raise Exception("a file name must be given for a list of uids.")
-        plan_names = [run.start['plan_name'] for run in runs]
-        if len(set(plan_names)) > 1:
-            raise Exception("mixed plan names in uids: %s" % plan_names)
-    else:
-        header = db[uids]
-        if filename is None:
-            if "sample_name" in list(header.start.keys()):
-                filename = header.start['sample_name']
-            else:
-                fds = header.fields()
-                # find the first occurance of _file_file_name in fields
-                f = next((x for x in fds if "_file_file_name" in x), None)
-                if f is None:
-                    raise Exception("could not automatically select a file name.")
-                filename = header.table(fields=[f])[f][1]
+    # Make sure all of the the plan_names match.
+    # A batch export can't be done on a mixed set to runs.
+    plan_names = {run.start['uid']: run.start['plan_name'] for run in runs}
+    if len(set(plan_names.values())) > 1:
+        raise RuntimeError("A batch export must have matching plan names.", plan_names)
+    # TODO: Maybe update the code to export a group of runs with different plan_names,
+    # saving multiple files.
 
     # if replace_res_path is not specified, try to figure out whether it is necessary
     if len(replace_res_path)==0:
@@ -128,8 +142,6 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
         for m in runs[0].start['motors']:
             fds += [m] #, m+"_user_setpoint"]
 
-    if filename[-3:]!='.h5':
-        filename += '.h5'
 
     if filepath!='':
         if not os.path.exists(filepath):
