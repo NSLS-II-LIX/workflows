@@ -1,0 +1,143 @@
+export.py:6:1: F401 'threading' imported but unused
+export.py:10:1: F401 'socket' imported but unused
+export.py:13:1: F401 'collections.deque' imported but unused
+export.py:16:36: E231 missing whitespace after ','
+export.py:18:1: F401 'py4xs.detector_config.create_det_from_attrs' imported but unused
+export.py:19:27: E231 missing whitespace after ','
+export.py:23:1: E302 expected 2 blank lines, found 1
+export.py:32:1: E305 expected 2 blank lines after class or function definition, found 1
+export.py:35:1: E302 expected 2 blank lines, found 1
+export.py:43:80: E501 line too long (80 > 79 characters)
+export.py:45:34: E231 missing whitespace after ':'
+export.py:51:80: E501 line too long (88 > 79 characters)
+export.py:60:80: E501 line too long (87 > 79 characters)
+export.py:75:80: E501 line too long (87 > 79 characters)
+export.py:77:80: E501 line too long (101 > 79 characters)
+export.py:78:80: E501 line too long (108 > 79 characters)
+export.py:82:80: E501 line too long (90 > 79 characters)
+export.py:90:5: E722 do not use bare 'except'
+export.py:110:80: E501 line too long (90 > 79 characters)
+export.py:111:80: E501 line too long (94 > 79 characters)
+export.py:113:80: E501 line too long (85 > 79 characters)
+export.py:115:21: E225 missing whitespace around operator
+export.py:120:80: E501 line too long (85 > 79 characters)
+export.py:121:80: E501 line too long (92 > 79 characters)
+export.py:123:80: E501 line too long (105 > 79 characters)
+export.py:126:80: E501 line too long (99 > 79 characters)
+export.py:129:80: E501 line too long (86 > 79 characters)
+export.py:131:80: E501 line too long (99 > 79 characters)
+export.py:135:56: W291 trailing whitespace
+export.py:141:80: E501 line too long (87 > 79 characters)
+export.py:142:80: E501 line too long (86 > 79 characters)
+export.py:145:80: E501 line too long (85 > 79 characters)
+export.py:146:29: E225 missing whitespace around operator
+export.py:154:23: E261 at least two spaces before inline comment
+export.py:154:24: E262 inline comment should start with '# '
+export.py:156:16: E225 missing whitespace around operator
+export.py:167:80: E501 line too long (83 > 79 characters)
+export.py:168:64: E261 at least two spaces before inline comment
+export.py:168:65: E262 inline comment should start with '# '
+export.py:168:80: E501 line too long (94 > 79 characters)
+export.py:176:80: E501 line too long (86 > 79 characters)
+export.py:194:17: E711 comparison to None should be 'if cond is None:'
+export.py:197:20: F821 undefined name 'readShimadzuDatafile'
+export.py:197:79: E202 whitespace before ')'
+export.py:197:80: E501 line too long (80 > 79 characters)
+export.py:198:80: E501 line too long (96 > 79 characters)
+export.py:200:16: E225 missing whitespace around operator
+export.py:207:80: E501 line too long (80 > 79 characters)
+export.py:214:32: E711 comparison to None should be 'if cond is None:'
+export.py:235:80: E501 line too long (90 > 79 characters)
+export.py:237:5: E265 block comment should start with '# '
+export.py:239:80: E501 line too long (87 > 79 characters)
+export.py:240:80: E501 line too long (90 > 79 characters)
+export.py:242:61: E261 at least two spaces before inline comment
+export.py:246:53: E261 at least two spaces before inline comment
+export.py:246:80: E501 line too long (81 > 79 characters)
+export.py:254:5: E722 do not use bare 'except'
+export.py:263:21: E225 missing whitespace around operator
+export.py:265:9: E266 too many leading '#' for block comment
+export.py:267:80: E501 line too long (89 > 79 characters)
+export.py:273:69: E225 missing whitespace around operator
+export.py:275:25: E225 missing whitespace around operator
+export.py:279:17: E265 block comment should start with '# '
+export.py:280:27: E225 missing whitespace around operator
+export.py:281:80: E501 line too long (106 > 79 characters)
+export.py:283:27: E225 missing whitespace around operator
+export.py:287:19: E231 missing whitespace after ','
+export.py:288:80: E501 line too long (114 > 79 characters)
+export.py:293:17: E722 do not use bare 'except'
+export.py:295:19: E225 missing whitespace around operator
+export.py:302:19: E231 missing whitespace after ','
+export.py:303:19: E225 missing whitespace around operator
+export.py:303:43: E225 missing whitespace around operator
+export.py:310:15: E261 at least two spaces before inline comment
+export.py:311:80: E501 line too long (108 > 79 characters)
+export.py:314:21: W291 trailing whitespace
+export.py:315:73: W291 trailing whitespace
+export.py:316:19: W291 trailing whitespace
+export.py:319:21: W291 trailing whitespace
+export.py:322:30: W291 trailing whitespace
+export.py:323:14: W291 trailing whitespace
+export.py:325:1: E302 expected 2 blank lines, found 1
+export.py:326:12: E231 missing whitespace after ','
+export.py:329:50: W291 trailing whitespace
+export.py:332:1: E302 expected 2 blank lines, found 1
+export.py:334:80: E501 line too long (102 > 79 characters)
+export.py:335:80: E501 line too long (113 > 79 characters)
+export.py:342:1: W293 blank line contains whitespace
+export.py:346:66: E225 missing whitespace around operator
+export.py:347:80: E501 line too long (89 > 79 characters)
+export.py:347:88: E202 whitespace before ')'
+export.py:359:1: W293 blank line contains whitespace
+export.py:365:12: E128 continuation line under-indented for visual indent
+export.py:366:12: E128 continuation line under-indented for visual indent
+export.py:376:80: E501 line too long (104 > 79 characters)
+export.py:386:80: E501 line too long (80 > 79 characters)
+export.py:390:80: E501 line too long (97 > 79 characters)
+export.py:392:1: W293 blank line contains whitespace
+export.py:394:77: W291 trailing whitespace
+export.py:395:1: W293 blank line contains whitespace
+export.py:398:80: E501 line too long (84 > 79 characters)
+export.py:399:1: W293 blank line contains whitespace
+export.py:401:9: E265 block comment should start with '# '
+export.py:401:80: E501 line too long (107 > 79 characters)
+export.py:405:18: E231 missing whitespace after ','
+export.py:406:21: E225 missing whitespace around operator
+export.py:410:1: W293 blank line contains whitespace
+export.py:411:72: E225 missing whitespace around operator
+export.py:411:80: E501 line too long (86 > 79 characters)
+export.py:412:1: W293 blank line contains whitespace
+export.py:443:80: E501 line too long (88 > 79 characters)
+export.py:453:32: E713 test for membership should be 'not in'
+export.py:481:31: F541 f-string is missing placeholders
+export.py:483:80: E501 line too long (90 > 79 characters)
+export.py:490:80: E501 line too long (93 > 79 characters)
+export.py:491:33: E225 missing whitespace around operator
+export.py:492:80: E501 line too long (124 > 79 characters)
+export.py:496:34: E261 at least two spaces before inline comment
+export.py:496:80: E501 line too long (104 > 79 characters)
+export.py:498:80: E501 line too long (94 > 79 characters)
+export.py:499:41: E225 missing whitespace around operator
+export.py:501:77: W291 trailing whitespace
+export.py:504:46: E231 missing whitespace after ','
+export.py:507:35: F541 f-string is missing placeholders
+export.py:508:80: E501 line too long (85 > 79 characters)
+export.py:510:29: E265 block comment should start with '# '
+export.py:510:80: E501 line too long (83 > 79 characters)
+export.py:510:84: W291 trailing whitespace
+export.py:511:80: E501 line too long (122 > 79 characters)
+export.py:513:31: F541 f-string is missing placeholders
+export.py:513:80: E501 line too long (84 > 79 characters)
+export.py:525:80: E501 line too long (99 > 79 characters)
+export.py:534:80: E501 line too long (104 > 79 characters)
+export.py:541:64: E261 at least two spaces before inline comment
+export.py:541:80: E501 line too long (80 > 79 characters)
+export.py:543:80: E501 line too long (80 > 79 characters)
+export.py:545:50: E225 missing whitespace around operator
+export.py:550:80: E501 line too long (94 > 79 characters)
+export.py:553:80: E501 line too long (91 > 79 characters)
+export.py:554:38: E261 at least two spaces before inline comment
+export.py:555:75: E261 at least two spaces before inline comment
+export.py:555:80: E501 line too long (101 > 79 characters)
+export.py:560:29: E722 do not use bare 'except'

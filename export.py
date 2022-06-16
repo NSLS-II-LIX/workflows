@@ -1,18 +1,17 @@
-import copy
 import databroker
-import datetime
 import h5py
 import json
 import os
 import prefect
 import threading
 import numpy as np
-import epics
+import re
 import shutil
 import socket
-import warnings
+import time
 
 from collections import deque, Mapping
+from enum import Enum
 from lixtools.atsas import gen_report
 from lixtools.hdf import h5sol_HPLC,h5sol_HT
 from prefect import task, Flow, Parameter
@@ -20,6 +19,18 @@ from py4xs.detector_config import create_det_from_attrs
 from py4xs.hdf import h5xs,h5exp
 
 packing_queue_sock_port = 9999
+
+class data_file_path(Enum):
+    old_gpfs = '/GPFS/xf16id/exp_path'
+    lustre_legacy = '/nsls2/data/lix/legacy'
+    lustre_asset = '/nsls2/data/lix/asset'
+    lustre_proposals = '/nsls2/data/lix/proposals'
+    gpfs = '/nsls2/xf16id1/data'
+    gpfs_experiments = '/nsls2/xf16id1/experiments'
+    ramdisk = '/exp_path'
+
+pilatus_data_dir = data_file_path.lustre_legacy.value
+data_destination = data_file_path.lustre_legacy.value
 
 @task
 def run_export_lix(uids):
@@ -217,21 +228,6 @@ def h5_attach_hplc(filename_h5, filename_hplc, chapter_num=-1, grp_name=None):
     f.close()
 
 
-def send_to_packing_queue_remote(uid, datatype, froot=data_file_path.gpfs, move_first=False):
-    """ data_type must be one of ["scan", "flyscan", "HPLC", "sol", "multi", "mscan"]
-        single uid only for "scan", "flyscan", "HPLC"
-        uids must be concatenated using '|' for "multi" and "sol"
-        if move_first is True, move the files from RAMDISK to GPFS first, otherwise the RAMDISK
-            may fill up since only one pack_h5 process is allow
-    """
-    if datatype not in ["scan", "flyscan", "HPLC", "multi", "sol", "mscan", "mfscan"]:
-        raise Exception("invalid data type: {datatype}, valid options are scan and HPLC.")
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect(('xf16id-srv1', packing_queue_sock_port))
-    msg = f"{datatype}::{uid}::{proc_path}::{froot.name}::{move_first}"
-    s.send(msg.encode('ascii'))
-    s.close()
-
 def pack_and_process(runs, data_type, filepath=""):
 
     # useful for moving files from RAM disk to GPFS during fly scans
@@ -244,10 +240,10 @@ def pack_and_process(runs, data_type, filepath=""):
         raise Exception("invalid data type: {datatype}, valid options are scan and HPLC.")
 
     if data_type not in ["multi", "sol", "mscan", "mfscan"]: # single UID
-        if 'exit_status' not in run.stop.keys():
+        if 'exit_status' not in runs[0].stop.keys():
             print(f"in complete header for {runs[0].start['uid']}.")
             return
-        if run.stop['exit_status'] != 'success': # the scan actually finished
+        if runs[0].stop['exit_status'] != 'success': # the scan actually finished
             print(f"scan {runs[0].start['uid']} was not successful.")
             return
 
@@ -315,43 +311,6 @@ def pack_and_process(runs, data_type, filepath=""):
     print(f"{time.asctime()}: finished packing/processing, total time lapsed: {time.time()-t0:.1f} sec ...")
 
 
-def process_packing_queue():
-    """ this should only run on xf16idc-gpu1, moved to srv1 Mar 2022
-        needed for HPLC run and microbeam mapping
-    """
-    serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    host = socket.gethostname()
-    if host!='xf16id-srv1' and host!="xf16id-srv1.nsls2.bnl.local":
-        raise Exception(f"this function can only run on xf16id-srv1, not {host}.")
-    serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    serversocket.bind(('xf16id-srv1', packing_queue_sock_port))
-    serversocket.listen(5)
-    print('listening ...')
-
-    while True:
-        clientsocket,addr = serversocket.accept()
-        print(f"{time.asctime()}: got a connection from {addr} ...")
-        msg = clientsocket.recv(8192).decode()
-        print(msg)
-        clientsocket.close()
-        data_type,uid,path,frn,t = msg.split("::")
-        if t is True:
-            move_first = True
-        else:
-            move_first = False
-
-        if data_type not in ["multi", "sol", "mscan", "mfscan"]: # single UID
-            if 'exit_status' not in db[uid].stop.keys():
-                print(f"in complete header for {uid}.")
-                return
-            if db[uid].stop['exit_status'] != 'success': # the scan actually finished
-                print(f"scan {uid} was not successful.")
-                return
-
-        threading.Thread(target=pack_and_process, args=(data_type,uid,path,)).start()
-        print("processing thread started ...")
-
-
 def conv_to_list(d): 
     if isinstance(d, float) or isinstance(d, int) or isinstance(d, str): 
         return [d] 
@@ -390,7 +349,7 @@ def locate_h5_resource(res, replace_res_path, debug=False):
     if not os.path.exists(fn):
         fdir = os.path.dirname(fn)
         if not os.path.exists(fdir):
-            makedirs(fdir, mode=0o2775)
+            os.makedirs(fdir, mode=0o2775)
         if debug:
             print(f"copying {fn_orig} to {fdir}")
         tfn = fn+"_partial"
@@ -435,11 +394,20 @@ def hdf5_export(runs, filename, debug=False,
         Now that the resource is a h5 file, copy data directly from the file 
         
     """
+    # TODO: get rid of legacy_client.
+    legacy_client = databroker.from_profile("nsls2", username=None)['lix']['raw'].v1
+    
     with h5py.File(filename, "w") as f:
         #f.swmr_mode = True # Unable to start swmr writing (file superblock version - should be at least 3)
         for run in runs:
+
+            res_docs = {}
+            for n,d in legacy_client[run.start['uid']].documents():
+                if n=="resource":
+                    res_docs[d['uid']] = d
+            if debug:
+                print("res_docs:\n", res_docs)
             
-            resources = [doc for name, doc in run.documents() if name=='resource']
             descriptors = [doc for name, doc in run.documents() if name=='descriptor']
             
             if use_uid:
@@ -449,7 +417,7 @@ def hdf5_export(runs, filename, debug=False,
 
             group = f.create_group(top_group_name)
             # TODO: Update this function to use a run, instead of a header.
-            _safe_attrs_assignment(group, header)
+            _safe_attrs_assignment(group, legacy_client[run.start['uid']])
             for i, descriptor in enumerate(descriptors):
                 # make sure it's a dictionary and trim any spurious keys
                 descriptor = dict(descriptor)
@@ -471,14 +439,14 @@ def hdf5_export(runs, filename, debug=False,
 
                 # fill can be bool or list
                 # TODO: fix this one.
-                events = (doc for doc in run[descriptor['name'])
+                header = legacy_client[run.start['uid']]
                 events = list(header.events(stream_name=descriptor['name'], fill=False))
 
                 res_dict = {}
                 for k, v in list(events[0]['data'].items()):
                     if not isinstance(v, str):
                         continue
-                    if v.split('/')[0] in resource_docs.keys():
+                    if v.split('/')[0] in res_docs.keys():
                         res_dict[k] = []
                         for ev in events:
                             res_uid = ev['data'][k].split("/")[0]
@@ -509,7 +477,7 @@ def hdf5_export(runs, filename, debug=False,
                                                 fletcher32=True)
 
                     if key in list(res_dict.keys()):
-                        res = resource_docs[res_dict[key][0]]
+                        res = res_docs[res_dict[key][0]]
                         print(f"processing resource ...\n", res)
 
                         # pilatus data, change the path from ramdisk to IOC data directory
@@ -521,13 +489,13 @@ def hdf5_export(runs, filename, debug=False,
                             N = len(res_dict[key])
                             print(f"copying data from source h5 file(s) directly, N={N} ...")
                             if N==1:
-                                hf5, data = locate_h5_resource(resource_docs[res_dict[key][0]], replace_res_path=rp, debug=debug)
+                                hf5, data = locate_h5_resource(res_docs[res_dict[key][0]], replace_res_path=rp, debug=debug)
                                 data_group.copy(data, key)
                                 hf5.close()
                                 dataset = data_group[key]
                             else: # ideally this should never happen, only 1 hdf5 file/resource per scan
                                 for i in range(N):
-                                    hf5, data = locate_h5_resource(resource_docs[res_dict[key][i]])
+                                    hf5, data = locate_h5_resource(res_docs[res_dict[key][i]])
                                     if i==0:
                                         dataset = data_group.create_dataset(
                                                 key, shape=(N, *data.shape), 
@@ -538,7 +506,7 @@ def hdf5_export(runs, filename, debug=False,
                         else:
                             print(f"getting resource data using handlers ...")
                             # TODO: I think this should work, but we need to test it.
-                            rawdata = run[descriptor['name']['data'][key]
+                            rawdata = run[descriptor['name']]['data'][key]
                             #rawdata = header.table(stream_name=descriptor['name'], 
                             #                       fields=[key], fill=True)[key]   # this returns the time stamps as well
                     else:
