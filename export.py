@@ -228,16 +228,21 @@ def h5_attach_hplc(filename_h5, filename_hplc, chapter_num=-1, grp_name=None):
     f.close()
 
 
-def pack_and_process(runs, data_type, filepath=""):
+def pack_and_process(runs, filepath=""):
 
     # useful for moving files from RAM disk to GPFS during fly scans
     #
     # assume other type of data are saved on RAM disk as well (GPFS not working for WAXS2)
     # these data must be moved manually to GPFS
     #global pilatus_trigger_mode  #,CBF_replace_data_path
-
+    
+    plan_names = {run.start['plan_name'] for run in runs}
+    if len(plan_names) > 1:
+        raise RuntimeError("A batch export must have matching plan names.", plan_names)
+    
+    data_type = runs[0].start['plan_name']
     if data_type not in ["scan", "flyscan", "HPLC", "multi", "sol", "mscan", "mfscan"]:
-        raise Exception("invalid data type: {datatype}, valid options are scan and HPLC.")
+        raise Exception(f"invalid data type: {data_type}, valid options are scan and HPLC.")
 
     if data_type not in ["multi", "sol", "mscan", "mfscan"]: # single UID
         if 'exit_status' not in runs[0].stop.keys():
