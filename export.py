@@ -92,15 +92,15 @@ def output_filename(runs, filename=None):
             raise Exception("a file name must be given for a list of uids.")
     elif len(runs) == 1:
         if filename is None:
-            if "sample_name" in list(header.start.keys()):
+            if "sample_name" in list(runs[0].start.keys()):
                 filename = runs[0].start['sample_name']
             else:
                 # find the first occurance of _file_file_name in fields
-                # TODO: Don't use header.
-                f = next((x for x in header.fields() if "_file_file_name" in x), None)
-                if f is None:
-                    raise Exception("could not automatically select a file name.")
-                filename = header.table(fields=[f])[f][1]
+                fields = {field: stream for stream in runs[0]for field in runs[0][stream]}
+                stream_name = next((x for x in fields.keys() if "_file_file_name" in x), None)
+                if stream_name is None:
+                    raise RuntimeError("could not automatically select a file name.")
+                filename = runs[0][fields[stream_name]]['data'][stream_name][1]
     if filename[-3:]!='.h5':
         filename += '.h5'
     return filename
@@ -135,13 +135,12 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
     if len(replace_res_path)==0:
         replace_res_path = compile_replace_res_path(runs[0])
 
-    fds0 = headers[0].fields()
+    fds0 = {field for stream in runs[0] for field in runs[0][stream]}
     # only these fields are considered relevant to be saved in the hdf5 file
-    fds = list(set(fds0) & set(fields))
+    fds = list(fds0 & set(fields))
     if 'motors' in list(runs[0].start.keys()) and include_motor_pos:
         for m in runs[0].start['motors']:
             fds += [m] #, m+"_user_setpoint"]
-
 
     if filepath!='':
         if not os.path.exists(filepath):
@@ -154,7 +153,6 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
         except OSError:
             pass
 
-    print(fds)
     hdf5_export(runs, filename, fields=fds, stream_name=stream_name, use_uid=False,
                 replace_res_path=replace_res_path, debug=debug) #, mds= db.mds, use_uid=False)
 
@@ -440,14 +438,9 @@ def hdf5_export(runs, filename, debug=False,
     with h5py.File(filename, "w") as f:
         #f.swmr_mode = True # Unable to start swmr writing (file superblock version - should be at least 3)
         for run in runs:
-            #try:
-            #    db = header.db
-            #except AttributeError:
-            #    pass
-            #if db is None:
-            #    raise RuntimeError('db is not defined in header, so we need to input db explicitly.')
-            resource_docs = [doc for name, doc in run.documents() if name=='resource']
-            descriptor_docs = [doc for name, doc in run.documents() if name=='descriptor']
+            
+            resources = [doc for name, doc in run.documents() if name=='resource']
+            descriptors = [doc for name, doc in run.documents() if name=='descriptor']
             
             if use_uid:
                 top_group_name = run.start['uid']
@@ -478,6 +471,7 @@ def hdf5_export(runs, filename, debug=False,
 
                 # fill can be bool or list
                 # TODO: fix this one.
+                events = (doc for doc in run[descriptor['name'])
                 events = list(header.events(stream_name=descriptor['name'], fill=False))
 
                 res_dict = {}
@@ -543,8 +537,10 @@ def hdf5_export(runs, filename, debug=False,
                                     hf5.close()
                         else:
                             print(f"getting resource data using handlers ...")
-                            rawdata = header.table(stream_name=descriptor['name'], 
-                                                   fields=[key], fill=True)[key]   # this returns the time stamps as well
+                            # TODO: I think this should work, but we need to test it.
+                            rawdata = run[descriptor['name']['data'][key]
+                            #rawdata = header.table(stream_name=descriptor['name'], 
+                            #                       fields=[key], fill=True)[key]   # this returns the time stamps as well
                     else:
                         print(f"compiling resource data from individual events ...")
                         rawdata = [e['data'][key] for e in events]
@@ -631,30 +627,3 @@ def _safe_attrs_assignment(node, d):
         # recreate the object.
         except TypeError:
             node.attrs[key] = json.dumps(value)
-
-
-# TODO: probably remove this function.
-# Databroker should be able to do this.
-def filter_fields(headers, unwanted_fields):
-    """
-    Filter out unwanted fields.
-    Parameters
-    ----------
-    headers : doct.Document or a list of that
-        returned by databroker object
-    unwanted_fields : list
-        list of str representing unwanted filed names
-    Returns
-    -------
-    set:
-        set of selected names
-    """
-    if isinstance(headers, Header):
-        headers = [headers]
-    whitelist = set()
-    for header in headers:
-        for descriptor in header.descriptors:
-            good = [key for key in descriptor.data_keys.keys()
-                    if key not in unwanted_fields]
-            whitelist.update(good)
-    return whitelist
