@@ -32,6 +32,72 @@ class data_file_path(Enum):
 pilatus_data_dir = data_file_path.lustre_legacy.value
 data_destination = data_file_path.lustre_legacy.value
 
+def readShimadzuSection(section):
+    """ the chromtographic data section starts with a header
+        followed by 2-column data
+        the input is a collection of strings
+    """
+    xdata = []
+    ydata = []
+    for line in section:
+        tt = line.split()
+        if len(tt)==2:
+            try:
+                x=float(tt[0])
+            except ValueError:
+                continue
+            try:
+                y=float(tt[1])
+            except ValueError:
+                continue
+            xdata.append(x)
+            ydata.append(y)
+    return xdata,ydata
+
+def readShimadzuDatafile(fn, chapter_num=-1, return_all_sections=False):
+    """ read the ascii data from Shimadzu Lab Solutions software
+        the file appear to be split in to multiple sections, each starts with [section name],
+        and ends with a empty line
+        returns the data in the sections titled
+            [LC Chromatogram(Detector A-Ch1)] and [LC Chromatogram(Detector B-Ch1)]
+
+        The file may be concatenated from several smaller files (chapters), resulting in sections
+        of the same name. this happens when exporting the UV/RI data. The new data seem to be
+        appended to the end of the file, and therefore can be accessed by champter# -1.
+    """
+    fd = open(fn, "r")
+    chapters = fd.read().split('[Header]')[1:]
+    fd.close()
+    print(f"{fn} contains {len(chapters)} chapters, reading chapter #{chapter_num} ...")
+
+    lines = ("[Header]"+chapters[chapter_num]).split('\n')
+    sects = []
+    while True:
+        try:
+            idx = lines.index('')
+        except ValueError:
+            break
+        if idx>0:
+            sects.append(lines[:idx])
+        lines = lines[idx+1:]
+
+    sections = {}
+    for i in range(len(sects)):
+        sections[sects[i][0]] = sects[i][1:]
+
+    if return_all_sections:
+        return sections
+
+    data = {}
+    header_str = '\n'.join(sections["[Header]"]) + '\n'.join(sections["[Original Files]"])
+    for k in sections.keys():
+        if "[LC Chromatogram" in k:
+            x,y = readShimadzuSection(sections[k])
+            data[k] = [x,y]
+
+    return header_str,data
+
+
 @task
 def run_export_lix(uids):
 
@@ -40,15 +106,17 @@ def run_export_lix(uids):
     to start workflows via Prefect.
     """
 
+    logger = prefect.context.get("logger")
+    logger.info(f"Uids: {uids}")
+
     tiled_client = databroker.from_profile("nsls2", username=None)['lix']['raw']
     runs = [tiled_client[uid] for uid in uids]
     task_info = {run.start['uid']:run.start['plan_name'] for run in runs}
 
-    logger = prefect.context.get("logger")
     logger.info(f"Processing: {task_info}")
 
     # TODO: Need to fix the line below
-    pack_and_process(runs, filepath="/nsls2/data/data/dssi/scratch/prefect-outputs/lix")
+    pack_and_process(runs, 'HPLC', filepath="/nsls2/data/dssi/scratch/prefect-outputs/lix")
 
 
 with Flow("export") as flow:
@@ -131,8 +199,9 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
         to avoid multiple processed requesting packaging, only 1 process is allowed at a given time
         this is i
     """
+    breakpoint()
     # Figure out the file name for the ourput file.
-    filename = output_filename(runs, filename=filename) 
+    filename = output_filename(runs, filename=filename)
 
     # Make sure all of the the plan_names match.
     # A batch export can't be done on a mixed set to runs.
@@ -146,7 +215,7 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
     if len(replace_res_path)==0:
         replace_res_path = compile_replace_res_path(runs[0])
 
-    fds0 = {field for stream in runs[0] for field in runs[0][stream]}
+    fds0 = {field for stream in runs[0] for field in runs[0][stream]['data']}
     # only these fields are considered relevant to be saved in the hdf5 file
     fds = list(fds0 & set(fields))
     if 'motors' in list(runs[0].start.keys()) and include_motor_pos:
@@ -174,7 +243,7 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
     if attach_uv_file:
         # by default the UV file should be saved in /nsls2/xf16id1/Windows/
         # ideally this should be specified, as the default file is overwritten quickly
-        h5_attach_hplc(filename, '/nsls2/xf16id1/Windows/hplc_export.txt')
+        h5_attach_hplc(filename, '/nsls2/data/lix/shared/hplc_export.txt')
 
     print(f"finished packing {filename} ...")
     return filename
@@ -228,38 +297,37 @@ def h5_attach_hplc(filename_h5, filename_hplc, chapter_num=-1, grp_name=None):
     f.close()
 
 
-def pack_and_process(runs, filepath=""):
+def pack_and_process(runs, data_type, filepath=""):
 
     # useful for moving files from RAM disk to GPFS during fly scans
     #
     # assume other type of data are saved on RAM disk as well (GPFS not working for WAXS2)
     # these data must be moved manually to GPFS
     #global pilatus_trigger_mode  #,CBF_replace_data_path
-    
+
     plan_names = {run.start['plan_name'] for run in runs}
     if len(plan_names) > 1:
         raise RuntimeError("A batch export must have matching plan names.", plan_names)
-    
-    data_type = runs[0].start['plan_name']
+
+    # data_type = runs[0].start['experiment']
     if data_type not in ["scan", "flyscan", "HPLC", "multi", "sol", "mscan", "mfscan"]:
-        raise Exception(f"invalid data type: {data_type}, valid options are scan and HPLC.")
+        raise RuntimeError(f"invalid data type: {data_type}, valid options are scan and HPLC.")
 
     if data_type not in ["multi", "sol", "mscan", "mfscan"]: # single UID
         if 'exit_status' not in runs[0].stop.keys():
-            print(f"in complete header for {runs[0].start['uid']}.")
-            return
+            raise RuntimeError(f"in complete header for {runs[0].start['uid']}.")
         if runs[0].stop['exit_status'] != 'success': # the scan actually finished
-            print(f"scan {runs[0].start['uid']} was not successful.")
-            return
+            raise RuntimeError(f"scan {runs[0].start['uid']} was not successful.")
 
     t0 = time.time()
+
+    # this should return None if we are only doing export. 
+    # This file is needed only for the processing step.
     # if the filepath contains exp.h5, read detectors/qgrid from it
     try:
         dt_exp = h5exp(filepath+'/exp.h5')
     except:
         dt_exp = None
-
-    dir_name = None
 
     if data_type in ["multi", "sol", "mscan", "mfscan"]:
 
@@ -272,8 +340,7 @@ def pack_and_process(runs, filepath=""):
             print("cannot find holderName from the header, using tmp.h5 as filename ...")
             fh5_name = "tmp.h5"
         else:
-            dir_name = runs[0].start['holderName']
-            fh5_name = dir_name+'.h5'
+            fh5_name = f"{runs[0].start['holderName']}.h5"
         filename = pack_h5(runs, filepath, filename="tmp.h5")
         if filename is not None and dt_exp is not None and data_type!="mscan":
             print('processing ...')
@@ -316,22 +383,22 @@ def pack_and_process(runs, filepath=""):
     print(f"{time.asctime()}: finished packing/processing, total time lapsed: {time.time()-t0:.1f} sec ...")
 
 
-def conv_to_list(d): 
-    if isinstance(d, float) or isinstance(d, int) or isinstance(d, str): 
-        return [d] 
+def conv_to_list(d):
+    if isinstance(d, float) or isinstance(d, int) or isinstance(d, str):
+        return [d]
     elif isinstance(d, list):
         if not isinstance(d[0], list):
-            return d 
+            return d
     d1 = []
     for i in d:
-        d1 += conv_to_list(i) 
-    return d1 
+        d1 += conv_to_list(i)
+    return d1
 
 def update_res_path(res_path, replace_res_path={}):
     for rp1,rp2 in replace_res_path.items():
         print("updating resource path ...")
         if rp1 in res_path:
-            res_path = res_path.replace(rp1, rp2)  
+            res_path = res_path.replace(rp1, rp2)
     return res_path
 
 def locate_h5_resource(res, replace_res_path, debug=False):
@@ -344,7 +411,7 @@ def locate_h5_resource(res, replace_res_path, debug=False):
     fn = update_res_path(fn_orig, replace_res_path)
     if debug:
         print(f"resource locations: {fn_orig} -> {fn}")
-    
+
     if not(os.path.exists(fn_orig) or os.path.exists(fn)):
         print(f"could not locate the resource at either {fn} or {fn_orig} ...")
         raise Exception
@@ -361,7 +428,7 @@ def locate_h5_resource(res, replace_res_path, debug=False):
         shutil.copy(fn_orig, tfn)
         os.rename(tfn, fn)
         os.remove(fn_orig)
-    
+
     hf5 = h5py.File(fn, "r")
     return hf5, hf5["/entry/data/data"]
 
@@ -394,14 +461,14 @@ def hdf5_export(runs, filename, debug=False,
         db should be included in hdr.
     replace_res_path: in case the resource has been moved, specify how the path should be updated
         e.g. replace_res_path = {"exp_path/hdf": "nsls2/xf16id1/data/2022-1"}
-        
+
     Revision 2021 May
-        Now that the resource is a h5 file, copy data directly from the file 
-        
+        Now that the resource is a h5 file, copy data directly from the file
+
     """
     # TODO: get rid of legacy_client.
     legacy_client = databroker.from_profile("nsls2", username=None)['lix']['raw'].v1
-    
+
     with h5py.File(filename, "w") as f:
         #f.swmr_mode = True # Unable to start swmr writing (file superblock version - should be at least 3)
         for run in runs:
@@ -412,9 +479,9 @@ def hdf5_export(runs, filename, debug=False,
                     res_docs[d['uid']] = d
             if debug:
                 print("res_docs:\n", res_docs)
-            
+
             descriptors = [doc for name, doc in run.documents() if name=='descriptor']
-            
+
             if use_uid:
                 top_group_name = run.start['uid']
             else:
@@ -503,7 +570,7 @@ def hdf5_export(runs, filename, debug=False,
                                     hf5, data = locate_h5_resource(res_docs[res_dict[key][i]])
                                     if i==0:
                                         dataset = data_group.create_dataset(
-                                                key, shape=(N, *data.shape), 
+                                                key, shape=(N, *data.shape),
                                                 compression=data.compression,
                                                 chunks=(1, *data.chunks))
                                     dataset[i,:] = data
@@ -512,7 +579,7 @@ def hdf5_export(runs, filename, debug=False,
                             print(f"getting resource data using handlers ...")
                             # TODO: I think this should work, but we need to test it.
                             rawdata = run[descriptor['name']]['data'][key]
-                            #rawdata = header.table(stream_name=descriptor['name'], 
+                            #rawdata = header.table(stream_name=descriptor['name'],
                             #                       fields=[key], fill=True)[key]   # this returns the time stamps as well
                     else:
                         print(f"compiling resource data from individual events ...")
