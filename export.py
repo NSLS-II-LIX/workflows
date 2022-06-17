@@ -187,11 +187,11 @@ def output_filename(runs, filename=None):
 
 def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=None,
             attach_uv_file=False, delete_old_file=True, include_motor_pos=True, debug=False,
-            fields=['em2_current1_mean_value', 'em2_current2_mean_value',
+            fields_to_export={'em2_current1_mean_value', 'em2_current2_mean_value',
                     'em1_sum_all_mean_value', 'em2_sum_all_mean_value', 'em2_ts_SumAll', 'em1_ts_SumAll',
                     'xsp3_spectrum_array_data', "pilatus_trigger_time",
                     'pil1M_image', 'pilW1_image', 'pilW2_image',
-                    'pil1M_ext_image', 'pilW1_ext_image', 'pilW2_ext_image'], replace_res_path={}):
+                    'pil1M_ext_image', 'pilW1_ext_image', 'pilW2_ext_image'}, replace_res_path={}):
 
     """ if only 1 uid is given, use the sample name as the file name
         any metadata associated with each uid will be retained (e.g. sample vs buffer)
@@ -199,7 +199,6 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
         to avoid multiple processed requesting packaging, only 1 process is allowed at a given time
         this is i
     """
-    breakpoint()
     # Figure out the file name for the ourput file.
     filename = output_filename(runs, filename=filename)
 
@@ -215,12 +214,12 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
     if len(replace_res_path)==0:
         replace_res_path = compile_replace_res_path(runs[0])
 
-    fds0 = {field for stream in runs[0] for field in runs[0][stream]['data']}
+    fields_run = {field for stream in runs[0] for field in runs[0][stream]['data']}
     # only these fields are considered relevant to be saved in the hdf5 file
-    fds = list(fds0 & set(fields))
+    fields= list(fields_run & fields_to_export)
     if 'motors' in list(runs[0].start.keys()) and include_motor_pos:
         for m in runs[0].start['motors']:
-            fds += [m] #, m+"_user_setpoint"]
+            fields += [m] #, m+"_user_setpoint"]
 
     if filepath!='':
         if not os.path.exists(filepath):
@@ -233,7 +232,7 @@ def pack_h5(runs, filepath='', filename=None, fix_sample_name=True, stream_name=
         except OSError:
             pass
 
-    hdf5_export(runs, filename, fields=fds, stream_name=stream_name, use_uid=False,
+    hdf5_export(runs, filename, fields=fields, stream_name=stream_name, use_uid=False,
                 replace_res_path=replace_res_path, debug=debug) #, mds= db.mds, use_uid=False)
 
     # by default the groups in the hdf5 file are named after the scan IDs
