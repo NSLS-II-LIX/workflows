@@ -35,12 +35,10 @@ data_destination = data_file_path.lustre_legacy.value
 
 @task
 def run_export_lix(uids):
-
     """
     This function access the data via tiled and read relevant metadata in order
     to start workflows via Prefect.
     """
-
     logger = prefect.context.get("logger")
     logger.info(f"Uids: {uids}")
 
@@ -50,8 +48,12 @@ def run_export_lix(uids):
 
     logger.info(f"Processing: {task_info}")
 
-    # pack_and_process(runs, 'HPLC', filepath="/nsls2/data/dssi/scratch/prefect-outputs/lix")
-    pack(runs, "/nsls2/data/dssi/scratch/prefect-outputs/lix")
+    # pack_and_process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
+    pack(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
+    process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
+
+    logger.info(f"Processing complete: {task_info}")
+
 
 with Flow("export") as flow:
     uids = Parameter("uids")
@@ -71,7 +73,15 @@ def pack(runs, filepath):
     filename = pack_h5(runs, filepath)
 
 
-def pack_and_process(runs, data_type, filepath=""):
+def process(runs, filepath):
+    """
+    Placeholder for processing code.
+    """
+
+    pass
+
+
+def pack_and_process(runs, filepath):
 
     # useful for moving files from RAM disk to GPFS during fly scans
     #
@@ -83,7 +93,7 @@ def pack_and_process(runs, data_type, filepath=""):
     if len(plan_names) > 1:
         raise RuntimeError("A batch export must have matching plan names.", plan_names)
 
-    # data_type = runs[0].start['experiment']
+    data_type = runs[0].start['experiment']
     if data_type not in ["scan", "flyscan", "HPLC", "multi", "sol", "mscan", "mfscan"]:
         raise RuntimeError(f"invalid data type: {data_type}, valid options are scan and HPLC.")
 
