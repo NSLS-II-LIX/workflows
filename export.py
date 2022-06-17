@@ -48,9 +48,10 @@ def run_export_lix(uids):
 
     logger.info(f"Processing: {task_info}")
 
-    # pack_and_process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
-    pack(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
-    process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
+    pack_and_process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix', 
+                     data_type='HPLC')
+    #pack(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
+    #process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
 
     logger.info(f"Processing complete: {task_info}")
 
@@ -81,7 +82,7 @@ def process(runs, filepath):
     pass
 
 
-def pack_and_process(runs, filepath):
+def pack_and_process(runs, filepath, data_type=None):
 
     # useful for moving files from RAM disk to GPFS during fly scans
     #
@@ -93,7 +94,9 @@ def pack_and_process(runs, filepath):
     if len(plan_names) > 1:
         raise RuntimeError("A batch export must have matching plan names.", plan_names)
 
-    data_type = runs[0].start['experiment']
+    if data_type is None:
+        data_type = runs[0].start['experiment']
+    
     if data_type not in ["scan", "flyscan", "HPLC", "multi", "sol", "mscan", "mfscan"]:
         raise RuntimeError(f"invalid data type: {data_type}, valid options are scan and HPLC.")
 
@@ -105,13 +108,7 @@ def pack_and_process(runs, filepath):
 
     t0 = time.time()
 
-    # this should return None if we are only doing export. 
-    # This file is needed only for the processing step.
-    # if the filepath contains exp.h5, read detectors/qgrid from it
-    try:
-        dt_exp = h5exp(filepath+'/exp.h5')
-    except:
-        dt_exp = None
+    dt_exp = h5exp(os.path.join(runs[0].start['proc_path'], 'exp.h5'))
 
     if data_type in ["multi", "sol", "mscan", "mfscan"]:
 
@@ -430,17 +427,17 @@ def locate_h5_resource(res, replace_res_path, debug=False):
         this function will look for the file at the original location, and relocate the file first if it is there
         and return the h5 dataset
     """
+
     fn_orig = res["root"] + res["resource_path"]
     fn = update_res_path(fn_orig, replace_res_path)
     if debug:
         print(f"resource locations: {fn_orig} -> {fn}")
 
     if not(os.path.exists(fn_orig) or os.path.exists(fn)):
-        print(f"could not locate the resource at either {fn} or {fn_orig} ...")
-        raise Exception
+        raise Exception(f"could not locate the resource at either {fn} or {fn_orig} ...")
     if os.path.exists(fn_orig) and os.path.exists(fn) and fn_orig!=fn:
-        print(f"both {fn} and {fn_orig} exist, resolve the conflict manually first ..." )
-        raise Exception
+        raise Exception(f"both {fn} and {fn_orig} exist, resolve the conflict manually first ..." )
+    
     if not os.path.exists(fn):
         fdir = os.path.dirname(fn)
         if not os.path.exists(fdir):
