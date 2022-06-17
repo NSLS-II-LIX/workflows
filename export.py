@@ -32,6 +32,131 @@ class data_file_path(Enum):
 pilatus_data_dir = data_file_path.lustre_legacy.value
 data_destination = data_file_path.lustre_legacy.value
 
+
+@task
+def run_export_lix(uids):
+
+    """
+    This function access the data via tiled and read relevant metadata in order
+    to start workflows via Prefect.
+    """
+
+    logger = prefect.context.get("logger")
+    logger.info(f"Uids: {uids}")
+
+    tiled_client = databroker.from_profile("nsls2", username=None)['lix']['raw']
+    runs = [tiled_client[uid] for uid in uids]
+    task_info = {run.start['uid']:run.start['plan_name'] for run in runs}
+
+    logger.info(f"Processing: {task_info}")
+
+    # pack_and_process(runs, 'HPLC', filepath="/nsls2/data/dssi/scratch/prefect-outputs/lix")
+    pack(runs, "/nsls2/data/dssi/scratch/prefect-outputs/lix")
+
+with Flow("export") as flow:
+    uids = Parameter("uids")
+    run_export_lix(uids)
+
+
+def pack(runs, filepath):
+    
+    plan_names = {run.start['plan_name'] for run in runs}
+    if len(plan_names) > 1:
+        raise RuntimeError("A batch export must have matching plan names.", plan_names)
+    
+    plan_names = {run.start.get('experiment') for run in runs}
+    if len(plan_names) > 1:
+        raise RuntimeError("A batch export must have matching plan names.", plan_names)
+
+    filename = pack_h5(runs, filepath)
+
+
+def pack_and_process(runs, data_type, filepath=""):
+
+    # useful for moving files from RAM disk to GPFS during fly scans
+    #
+    # assume other type of data are saved on RAM disk as well (GPFS not working for WAXS2)
+    # these data must be moved manually to GPFS
+    #global pilatus_trigger_mode  #,CBF_replace_data_path
+
+    plan_names = {run.start['plan_name'] for run in runs}
+    if len(plan_names) > 1:
+        raise RuntimeError("A batch export must have matching plan names.", plan_names)
+
+    # data_type = runs[0].start['experiment']
+    if data_type not in ["scan", "flyscan", "HPLC", "multi", "sol", "mscan", "mfscan"]:
+        raise RuntimeError(f"invalid data type: {data_type}, valid options are scan and HPLC.")
+
+    if data_type not in ["multi", "sol", "mscan", "mfscan"]: # single UID
+        if 'exit_status' not in runs[0].stop.keys():
+            raise RuntimeError(f"in complete header for {runs[0].start['uid']}.")
+        if runs[0].stop['exit_status'] != 'success': # the scan actually finished
+            raise RuntimeError(f"scan {runs[0].start['uid']} was not successful.")
+
+    t0 = time.time()
+
+    # this should return None if we are only doing export. 
+    # This file is needed only for the processing step.
+    # if the filepath contains exp.h5, read detectors/qgrid from it
+    try:
+        dt_exp = h5exp(filepath+'/exp.h5')
+    except:
+        dt_exp = None
+
+    if data_type in ["multi", "sol", "mscan", "mfscan"]:
+
+        uids = [run.start['uid'] for run in runs]
+
+        if data_type=="sol":
+            sb_dict = json.loads(uids.pop())
+        ## assume that the meta data contains the holderName
+        if 'holderName' not in list(runs[0].start.keys()):
+            print("cannot find holderName from the header, using tmp.h5 as filename ...")
+            fh5_name = "tmp.h5"
+        else:
+            fh5_name = f"{runs[0].start['holderName']}.h5"
+        filename = pack_h5(runs, filepath, filename="tmp.h5")
+        if filename is not None and dt_exp is not None and data_type!="mscan":
+            print('processing ...')
+            if data_type=="sol":
+                dt = h5sol_HT(filename, [dt_exp.detectors, dt_exp.qgrid])
+                dt.assign_buffer(sb_dict)
+                dt.process(filter_data=True, sc_factor="auto", debug='quiet')
+                #dt.export_d1s(path=filepath+"/processed/")
+            elif data_type=="multi":
+                dt = h5xs(filename, [dt_exp.detectors, dt_exp.qgrid], transField='em2_sum_all_mean_value')
+                dt.load_data(debug="quiet")
+            elif data_type=="mfscan":
+                dt = h5xs(filename, [dt_exp.detectors, dt_exp.qgrid])
+                dt.load_data(debug="quiet")
+            dt.fh5.close()
+            del dt,dt_exp
+            if fh5_name != "tmp.h5":  # temporary fix, for some reason other processes cannot open the packed file
+                os.system(f"cd {filepath} ; cp tmp.h5 {fh5_name} ; rm tmp.h5")
+            if data_type == "sol":
+                try:
+                    gen_report(fh5_name)
+                except:
+                    pass
+    elif data_type=="HPLC":
+        filename = pack_h5(runs, filepath=filepath, attach_uv_file=True)
+        if filename is not None and dt_exp is not None:
+            print('procesing ...')
+            dt = h5sol_HPLC(filename, [dt_exp.detectors, dt_exp.qgrid])
+            dt.process(debug='quiet')
+            dt.fh5.close()
+            del dt,dt_exp
+    elif data_type=="flyscan" or data_type=="scan":
+        filename = pack_h5(runs, filepath=filepath)
+    else:
+        print(f"invalid data type: {data_type} .")
+        return
+
+    if filename is None:
+        return # packing unsuccessful,
+    print(f"{time.asctime()}: finished packing/processing, total time lapsed: {time.time()-t0:.1f} sec ...")
+
+
 def readShimadzuSection(section):
     """ the chromtographic data section starts with a header
         followed by 2-column data
@@ -53,6 +178,7 @@ def readShimadzuSection(section):
             xdata.append(x)
             ydata.append(y)
     return xdata,ydata
+
 
 def readShimadzuDatafile(fn, chapter_num=-1, return_all_sections=False):
     """ read the ascii data from Shimadzu Lab Solutions software
@@ -96,32 +222,6 @@ def readShimadzuDatafile(fn, chapter_num=-1, return_all_sections=False):
             data[k] = [x,y]
 
     return header_str,data
-
-
-@task
-def run_export_lix(uids):
-
-    """
-    This function access the data via tiled and read relevant metadata in order
-    to start workflows via Prefect.
-    """
-
-    logger = prefect.context.get("logger")
-    logger.info(f"Uids: {uids}")
-
-    tiled_client = databroker.from_profile("nsls2", username=None)['lix']['raw']
-    runs = [tiled_client[uid] for uid in uids]
-    task_info = {run.start['uid']:run.start['plan_name'] for run in runs}
-
-    logger.info(f"Processing: {task_info}")
-
-    # TODO: Need to fix the line below
-    pack_and_process(runs, 'HPLC', filepath="/nsls2/data/dssi/scratch/prefect-outputs/lix")
-
-
-with Flow("export") as flow:
-    uids = Parameter("uids")
-    run_export_lix(uids)
 
 
 def h5_fix_sample_name(filename_h5):
@@ -294,92 +394,6 @@ def h5_attach_hplc(filename_h5, filename_hplc, chapter_num=-1, grp_name=None):
         dset[:] = d
 
     f.close()
-
-
-def pack_and_process(runs, data_type, filepath=""):
-
-    # useful for moving files from RAM disk to GPFS during fly scans
-    #
-    # assume other type of data are saved on RAM disk as well (GPFS not working for WAXS2)
-    # these data must be moved manually to GPFS
-    #global pilatus_trigger_mode  #,CBF_replace_data_path
-
-    plan_names = {run.start['plan_name'] for run in runs}
-    if len(plan_names) > 1:
-        raise RuntimeError("A batch export must have matching plan names.", plan_names)
-
-    # data_type = runs[0].start['experiment']
-    if data_type not in ["scan", "flyscan", "HPLC", "multi", "sol", "mscan", "mfscan"]:
-        raise RuntimeError(f"invalid data type: {data_type}, valid options are scan and HPLC.")
-
-    if data_type not in ["multi", "sol", "mscan", "mfscan"]: # single UID
-        if 'exit_status' not in runs[0].stop.keys():
-            raise RuntimeError(f"in complete header for {runs[0].start['uid']}.")
-        if runs[0].stop['exit_status'] != 'success': # the scan actually finished
-            raise RuntimeError(f"scan {runs[0].start['uid']} was not successful.")
-
-    t0 = time.time()
-
-    # this should return None if we are only doing export. 
-    # This file is needed only for the processing step.
-    # if the filepath contains exp.h5, read detectors/qgrid from it
-    try:
-        dt_exp = h5exp(filepath+'/exp.h5')
-    except:
-        dt_exp = None
-
-    if data_type in ["multi", "sol", "mscan", "mfscan"]:
-
-        uids = [run.start['uid'] for run in runs]
-
-        if data_type=="sol":
-            sb_dict = json.loads(uids.pop())
-        ## assume that the meta data contains the holderName
-        if 'holderName' not in list(runs[0].start.keys()):
-            print("cannot find holderName from the header, using tmp.h5 as filename ...")
-            fh5_name = "tmp.h5"
-        else:
-            fh5_name = f"{runs[0].start['holderName']}.h5"
-        filename = pack_h5(runs, filepath, filename="tmp.h5")
-        if filename is not None and dt_exp is not None and data_type!="mscan":
-            print('processing ...')
-            if data_type=="sol":
-                dt = h5sol_HT(filename, [dt_exp.detectors, dt_exp.qgrid])
-                dt.assign_buffer(sb_dict)
-                dt.process(filter_data=True, sc_factor="auto", debug='quiet')
-                #dt.export_d1s(path=filepath+"/processed/")
-            elif data_type=="multi":
-                dt = h5xs(filename, [dt_exp.detectors, dt_exp.qgrid], transField='em2_sum_all_mean_value')
-                dt.load_data(debug="quiet")
-            elif data_type=="mfscan":
-                dt = h5xs(filename, [dt_exp.detectors, dt_exp.qgrid])
-                dt.load_data(debug="quiet")
-            dt.fh5.close()
-            del dt,dt_exp
-            if fh5_name != "tmp.h5":  # temporary fix, for some reason other processes cannot open the packed file
-                os.system(f"cd {filepath} ; cp tmp.h5 {fh5_name} ; rm tmp.h5")
-            if data_type == "sol":
-                try:
-                    gen_report(fh5_name)
-                except:
-                    pass
-    elif data_type=="HPLC":
-        filename = pack_h5(runs, filepath=filepath, attach_uv_file=True)
-        if filename is not None and dt_exp is not None:
-            print('procesing ...')
-            dt = h5sol_HPLC(filename, [dt_exp.detectors, dt_exp.qgrid])
-            dt.process(debug='quiet')
-            dt.fh5.close()
-            del dt,dt_exp
-    elif data_type=="flyscan" or data_type=="scan":
-        filename = pack_h5(runs, filepath=filepath)
-    else:
-        print(f"invalid data type: {data_type} .")
-        return
-
-    if filename is None:
-        return # packing unsuccessful,
-    print(f"{time.asctime()}: finished packing/processing, total time lapsed: {time.time()-t0:.1f} sec ...")
 
 
 def conv_to_list(d):
