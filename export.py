@@ -46,12 +46,14 @@ def run_export_lix(uids):
     runs = [tiled_client[uid] for uid in uids]
     task_info = {run.start['uid']:run.start['plan_name'] for run in runs}
 
+    # pack_and_process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix', 
+    #                 data_type='HPLC')
+    logger.info(f"Exporting: {task_info}")
+    filename = pack(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
     logger.info(f"Processing: {task_info}")
-
-    pack_and_process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix', 
-                     data_type='HPLC')
-    #pack(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
-    #process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
+    process(runs, filename, data_type='HPLC')
+    logger.info(f"Validating: {task_info}")
+    validate(runs, filename, data_type='HPLC')
 
     logger.info(f"Processing complete: {task_info}")
 
@@ -73,13 +75,30 @@ def pack(runs, filepath):
 
     filename = pack_h5(runs, filepath)
 
+    return filename
 
-def process(runs, filepath):
-    """
-    Placeholder for processing code.
-    """
 
-    pass
+def process(runs, filename, data_type=None):
+    """
+    TODO: Include processing code for other data_types.
+    """
+    if data_type=="HPLC":
+        dt_exp = h5exp(os.path.join(runs[0].start['proc_path'], 'exp.h5'))
+        if filename is not None and dt_exp is not None:
+            print('procesing ...')
+            dt = h5sol_HPLC(filename, [dt_exp.detectors, dt_exp.qgrid])
+            dt.process(debug='quiet')
+            dt.fh5.close()
+            del dt,dt_exp
+
+
+def validate(runs, filename, data_type=None):
+    """
+    Placeholder for validation  code.
+    """
+    if data_type=='HPLC':
+        with h5py.File(filename, "r+") as f:
+            pass
 
 
 def pack_and_process(runs, filepath, data_type=None):
@@ -108,7 +127,9 @@ def pack_and_process(runs, filepath, data_type=None):
 
     t0 = time.time()
 
+
     dt_exp = h5exp(os.path.join(runs[0].start['proc_path'], 'exp.h5'))
+    # dt_exp = h5exp(os.path.join(filepath, 'exp.h5'))
 
     if data_type in ["multi", "sol", "mscan", "mfscan"]:
 
