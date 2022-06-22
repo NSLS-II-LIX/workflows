@@ -46,7 +46,7 @@ def run_export_lix(uids):
     runs = [tiled_client[uid] for uid in uids]
     task_info = {run.start['uid']:run.start['plan_name'] for run in runs}
 
-    # pack_and_process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix', 
+    # pack_and_process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix',
     #                 data_type='HPLC')
     logger.info(f"Exporting: {task_info}")
     filename = pack(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
@@ -64,11 +64,11 @@ with Flow("export") as flow:
 
 
 def pack(runs, filepath):
-    
+
     plan_names = {run.start['plan_name'] for run in runs}
     if len(plan_names) > 1:
         raise RuntimeError("A batch export must have matching plan names.", plan_names)
-    
+
     plan_names = {run.start.get('experiment') for run in runs}
     if len(plan_names) > 1:
         raise RuntimeError("A batch export must have matching plan names.", plan_names)
@@ -80,7 +80,7 @@ def pack(runs, filepath):
 
 def process(runs, filename, data_type=None):
     """
-    TODO: Include processing code for other data_types.
+    PLaceholder for proccessing code.
     """
     if data_type=="HPLC":
         dt_exp = h5exp(os.path.join(runs[0].start['proc_path'], 'exp.h5'))
@@ -94,11 +94,29 @@ def process(runs, filename, data_type=None):
 
 def validate(runs, filename, data_type=None):
     """
-    Placeholder for validation  code.
+    Placeholder for validation code.
     """
-    if data_type=='HPLC':
-        with h5py.File(filename, "r+") as f:
-            pass
+    
+    # Check that tha hdf file has the expected groups.
+    expected_groups = {'HPLC': {'WT-HBP-Heme',
+                                'WT-HBP-Heme/em1_sum_all_mean_value_monitor',
+                                'WT-HBP-Heme/em2_sum_all_mean_value_monitor',
+                                'WT-HBP-Heme/primary/data/pil1M_image',
+                                'WT-HBP-Heme/primary/data/pilW2_image',
+                                'WT-HBP-Heme/primary/time',
+                                'WT-HBP-Heme/primary/timestamps'}}
+
+    found_groups = set()
+
+    def get_group(name):
+        found_groups.add(name)
+
+    with h5py.File(filename, 'r+') as f:
+        # The visit method recursively visits each object in the file.
+        f.visit(get_group)
+
+    # Make sure that the expected groups is a subset of the found groups.
+    assert expected_groups[data_type] < found_groups
 
 
 def pack_and_process(runs, filepath, data_type=None):
@@ -115,7 +133,7 @@ def pack_and_process(runs, filepath, data_type=None):
 
     if data_type is None:
         data_type = runs[0].start['experiment']
-    
+
     if data_type not in ["scan", "flyscan", "HPLC", "multi", "sol", "mscan", "mfscan"]:
         raise RuntimeError(f"invalid data type: {data_type}, valid options are scan and HPLC.")
 
@@ -458,7 +476,7 @@ def locate_h5_resource(res, replace_res_path, debug=False):
         raise Exception(f"could not locate the resource at either {fn} or {fn_orig} ...")
     if os.path.exists(fn_orig) and os.path.exists(fn) and fn_orig!=fn:
         raise Exception(f"both {fn} and {fn_orig} exist, resolve the conflict manually first ..." )
-    
+
     if not os.path.exists(fn):
         fdir = os.path.dirname(fn)
         if not os.path.exists(fdir):
