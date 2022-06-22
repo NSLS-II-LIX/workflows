@@ -108,6 +108,7 @@ def process(runs, filename, data_type=None):
         This shouldn't be needed later, we should be able to look 
         this up in the start doc.
     """
+    assert data_type in {'HPLC'}
 
     if data_type=="HPLC":
         dt_exp = h5exp(os.path.join(runs[0].start['proc_path'], 'exp.h5'))
@@ -134,7 +135,8 @@ def validate(runs, filename, data_type=None):
         This shouldn't be needed later, we should be able to look 
         this up in the start doc.
     """
-    
+    assert data_type in {'HPLC'}
+
     # Check that tha hdf file has the expected groups.
     expected_groups = {'HPLC': {'WT-HBP-Heme',
                                 'WT-HBP-Heme/em1_sum_all_mean_value_monitor',
@@ -143,7 +145,7 @@ def validate(runs, filename, data_type=None):
                                 'WT-HBP-Heme/primary/data/pilW2_image',
                                 'WT-HBP-Heme/primary/time',
                                 'WT-HBP-Heme/primary/timestamps'}}
-
+    
     found_groups = set()
 
     def get_group(name):
