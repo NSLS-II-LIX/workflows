@@ -18,7 +18,6 @@ from prefect import task, Flow, Parameter
 from py4xs.detector_config import create_det_from_attrs
 from py4xs.hdf import h5xs,h5exp
 
-packing_queue_sock_port = 9999
 
 class data_file_path(Enum):
     old_gpfs = '/GPFS/xf16id/exp_path'
@@ -48,10 +47,16 @@ def run_export_lix(uids):
 
     # pack_and_process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix',
     #                 data_type='HPLC')
+    
+    # Pack the runs.
     logger.info(f"Exporting: {task_info}")
     filename = pack(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
+    
+    # Process the runs.
     logger.info(f"Processing: {task_info}")
     process(runs, filename, data_type='HPLC')
+    
+    # Validate the results.
     logger.info(f"Validating: {task_info}")
     validate(runs, filename, data_type='HPLC')
 
@@ -64,6 +69,16 @@ with Flow("export") as flow:
 
 
 def pack(runs, filepath):
+    """
+    Pack a set of runs.
+
+    Parameters
+    ----------
+    runs: iterable
+        A list of BlueskyRuns
+    filepath: string
+        The location to write the output file.
+    """
 
     plan_names = {run.start['plan_name'] for run in runs}
     if len(plan_names) > 1:
@@ -80,8 +95,20 @@ def pack(runs, filepath):
 
 def process(runs, filename, data_type=None):
     """
-    PLaceholder for proccessing code.
+    Process a set of runs.
+
+    Parameters
+    ----------
+    runs: iterable
+        A list of BlueskyRuns
+    filename: string
+        The location of the packed output hdf5 file.
+    data_type: string
+        The type of experiment that was done.
+        This shouldn't be needed later, we should be able to look 
+        this up in the start doc.
     """
+
     if data_type=="HPLC":
         dt_exp = h5exp(os.path.join(runs[0].start['proc_path'], 'exp.h5'))
         if filename is not None and dt_exp is not None:
@@ -94,7 +121,18 @@ def process(runs, filename, data_type=None):
 
 def validate(runs, filename, data_type=None):
     """
-    Placeholder for validation code.
+    Validate the processed data..
+
+    Parameters
+    ----------
+    runs: iterable
+        A list of BlueskyRuns
+    filename: string
+        The location of the packed output hdf5 file.
+    data_type: string
+        The type of experiment that was done.
+        This shouldn't be needed later, we should be able to look 
+        this up in the start doc.
     """
     
     # Check that tha hdf file has the expected groups.
