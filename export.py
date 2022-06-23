@@ -25,7 +25,6 @@ class data_file_path(Enum):
     gpfs_experiments = "/nsls2/xf16id1/experiments"
     ramdisk = "/exp_path"
 
-
 pilatus_data_dir = data_file_path.lustre_legacy.value
 data_destination = data_file_path.lustre_legacy.value
 
@@ -76,6 +75,8 @@ def export_task(uids):
     logger.info("Pack, Processing, and Validation successful.")
 
 
+# Make the Prefect Flow.
+# A separate command is needed to register it with the Prefect server.
 with Flow("export") as flow:
     uids = Parameter("uids")
     export_task(uids)
@@ -83,7 +84,7 @@ with Flow("export") as flow:
 
 def pack(runs, filepath):
     """
-    Pack a set of runs.
+    Pack a set of runs, creates an hdf5 file and returns the created filename.
 
     Parameters
     ----------
@@ -93,13 +94,15 @@ def pack(runs, filepath):
         The location to write the output file.
     """
 
+    # Make sure all of the plan_names are matching.
     plan_names = {run.start["plan_name"] for run in runs}
     if len(plan_names) > 1:
         raise RuntimeError("A batch export must have matching plan names.", plan_names)
 
-    plan_names = {run.start.get("experiment") for run in runs}
-    if len(plan_names) > 1:
-        raise RuntimeError("A batch export must have matching plan names.", plan_names)
+    # Make sure all of the experiment types are matching.
+    experiments = {run.start.get("experiment") for run in runs}
+    if len(experiments) > 1:
+        raise RuntimeError("A batch export must have matching experiment types.", experiments)
 
     filename = pack_h5(runs, filepath)
 
@@ -126,7 +129,6 @@ def process(runs, filename, data_type=None):
     if data_type == "HPLC":
         dt_exp = h5exp(os.path.join(runs[0].start["proc_path"], "exp.h5"))
         if filename is not None and dt_exp is not None:
-            print("procesing ...")
             dt = h5sol_HPLC(filename, [dt_exp.detectors, dt_exp.qgrid])
             dt.process(debug="quiet")
             dt.fh5.close()
@@ -135,7 +137,7 @@ def process(runs, filename, data_type=None):
 
 def validate(runs, filename, data_type=None):
     """
-    Validate the processed data..
+    Validate the processed data.
 
     Parameters
     ----------
