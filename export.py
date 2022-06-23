@@ -16,7 +16,7 @@ from lixtools.atsas import gen_report
 from lixtools.hdf import h5sol_HPLC,h5sol_HT
 from prefect import task, Flow, Parameter
 from py4xs.detector_config import create_det_from_attrs
-from py4xs.hdf import h5xs,h5exp
+from py4xs.hdf import h5xs, h5exp
 
 
 class data_file_path(Enum):
@@ -33,39 +33,53 @@ data_destination = data_file_path.lustre_legacy.value
 
 
 @task
-def run_export_lix(uids):
+def export_task(uids):
     """
-    This function access the data via tiled and read relevant metadata in order
-    to start workflows via Prefect.
+    This is a Prefect task that will pack, process and validate a set of scans.
+
+    The output varies based on the type of scan.
+
+    This task is typically triggered manually from the Prefect webapp, but eventually    it can be triggered by the end_of_run workflow.
+
+    Parameters
+    ----------
+    uids: iterable
+        This is the list of uids to be packed, processed, and validated.
     """
+
     logger = prefect.context.get("logger")
     logger.info(f"Uids: {uids}")
 
+    # Connect to the tiled server, and get the set of runs from the set of uids.
     tiled_client = databroker.from_profile("nsls2", username=None)['lix']['raw']
     runs = [tiled_client[uid] for uid in uids]
     task_info = {run.start['uid']:run.start['plan_name'] for run in runs}
 
+    # This is the original function for export.
     # pack_and_process(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix',
     #                 data_type='HPLC')
-    
+
     # Pack the runs.
-    logger.info(f"Exporting: {task_info}")
+    logger.info(f"Pack: {task_info}")
     filename = pack(runs, '/nsls2/data/dssi/scratch/prefect-outputs/lix')
-    
+    logger.info("Pack complete.")
+
     # Process the runs.
     logger.info(f"Processing: {task_info}")
     process(runs, filename, data_type='HPLC')
-    
+    logger.info("Processing complete.")
+
     # Validate the results.
     logger.info(f"Validating: {task_info}")
     validate(runs, filename, data_type='HPLC')
+    logger.info("Validation complete.")
 
-    logger.info(f"Processing complete: {task_info}")
+    logger.info(f"Pack, Processing, and Validation successful.")
 
 
 with Flow("export") as flow:
     uids = Parameter("uids")
-    run_export_lix(uids)
+    export_task(uids)
 
 
 def pack(runs, filepath):
@@ -105,7 +119,7 @@ def process(runs, filename, data_type=None):
         The location of the packed output hdf5 file.
     data_type: string
         The type of experiment that was done.
-        This shouldn't be needed later, we should be able to look 
+        This shouldn't be needed later, we should be able to look
         this up in the start doc.
     """
     assert data_type in {'HPLC'}
@@ -132,7 +146,7 @@ def validate(runs, filename, data_type=None):
         The location of the packed output hdf5 file.
     data_type: string
         The type of experiment that was done.
-        This shouldn't be needed later, we should be able to look 
+        This shouldn't be needed later, we should be able to look
         this up in the start doc.
     """
     assert data_type in {'HPLC'}
@@ -145,7 +159,7 @@ def validate(runs, filename, data_type=None):
                                 'WT-HBP-Heme/primary/data/pilW2_image',
                                 'WT-HBP-Heme/primary/time',
                                 'WT-HBP-Heme/primary/timestamps'}}
-    
+
     found_groups = set()
 
     def get_group(name):
@@ -157,7 +171,6 @@ def validate(runs, filename, data_type=None):
 
     # Make sure that the expected groups is a subset of the found groups.
     assert expected_groups[data_type] < found_groups
-
 
 def pack_and_process(runs, filepath, data_type=None):
 
