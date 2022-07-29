@@ -770,8 +770,11 @@ def hdf5_export(
                             print("getting resource data using handlers ...")
                             # TODO: I think this should work, but we need to test it.
                             rawdata = run[descriptor["name"]]["data"][key]
-                            # rawdata = header.table(stream_name=descriptor['name'],
-                            #                       fields=[key], fill=True)[key]   # this returns the time stamps as well
+                            #rawdata = header.table(
+                            #    stream_name=descriptor["name"], fields=[key], fill=True
+                            #)[
+                            #    key
+                            #]  # this returns the time stamps as well
                     else:
                         print("compiling resource data from individual events ...")
                         rawdata = [e["data"][key] for e in events]
