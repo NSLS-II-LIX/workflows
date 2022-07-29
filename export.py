@@ -1,19 +1,19 @@
-import databroker
-import h5py
 import json
 import os
-import prefect
-import numpy as np
 import re
 import shutil
 import time
-
 from collections import Mapping
 from enum import Enum
+
+import databroker
+import h5py
+import numpy as np
+import prefect
 from lixtools.atsas import gen_report
 from lixtools.hdf import h5sol_HPLC, h5sol_HT
-from prefect import task, Flow, Parameter
-from py4xs.hdf import h5xs, h5exp
+from prefect import Flow, Parameter, task
+from py4xs.hdf import h5exp, h5xs
 
 
 class data_file_path(Enum):
@@ -24,6 +24,7 @@ class data_file_path(Enum):
     gpfs = "/nsls2/xf16id1/data"
     gpfs_experiments = "/nsls2/xf16id1/experiments"
     ramdisk = "/exp_path"
+
 
 pilatus_data_dir = data_file_path.lustre_legacy.value
 data_destination = data_file_path.lustre_legacy.value
@@ -102,7 +103,9 @@ def pack(runs, filepath):
     # Make sure all of the experiment types are matching.
     experiments = {run.start.get("experiment") for run in runs}
     if len(experiments) > 1:
-        raise RuntimeError("A batch export must have matching experiment types.", experiments)
+        raise RuntimeError(
+            "A batch export must have matching experiment types.", experiments
+        )
 
     filename = pack_h5(runs, filepath)
 
@@ -217,7 +220,9 @@ def pack_and_process(runs, filepath, data_type=None):
             sb_dict = json.loads(uids.pop())
         # assume that the meta data contains the holderName
         if "holderName" not in list(runs[0].start.keys()):
-            print("cannot find holderName from the header, using tmp.h5 as filename ...")
+            print(
+                "cannot find holderName from the header, using tmp.h5 as filename ..."
+            )
             fh5_name = "tmp.h5"
         else:
             fh5_name = f"{runs[0].start['holderName']}.h5"
@@ -319,7 +324,7 @@ def readShimadzuDatafile(fn, chapter_num=-1, return_all_sections=False):
             break
         if idx > 0:
             sects.append(lines[:idx])
-        lines = lines[idx + 1:]
+        lines = lines[idx + 1 :]
 
     sections = {}
     for i in range(len(sects)):
@@ -329,7 +334,9 @@ def readShimadzuDatafile(fn, chapter_num=-1, return_all_sections=False):
         return sections
 
     data = {}
-    header_str = "\n".join(sections["[Header]"]) + "\n".join(sections["[Original Files]"])
+    header_str = "\n".join(sections["[Header]"]) + "\n".join(
+        sections["[Original Files]"]
+    )
     for k in sections.keys():
         if "[LC Chromatogram" in k:
             x, y = readShimadzuSection(sections[k])
@@ -574,7 +581,9 @@ def locate_h5_resource(res, replace_res_path, debug=False):
         print(f"resource locations: {fn_orig} -> {fn}")
 
     if not (os.path.exists(fn_orig) or os.path.exists(fn)):
-        raise Exception(f"could not locate the resource at either {fn} or {fn_orig} ...")
+        raise Exception(
+            f"could not locate the resource at either {fn} or {fn_orig} ..."
+        )
     if os.path.exists(fn_orig) and os.path.exists(fn) and fn_orig != fn:
         raise Exception(
             f"both {fn} and {fn_orig} exist, resolve the conflict manually first ..."
@@ -828,7 +837,7 @@ def hdf5_export(
                                     data=data,
                                     compression="gzip",
                                     fletcher32=True,
-                                    )
+                                )
 
                     # Put contents of this data key (source, etc.)
                     # into an attribute on the associated data set.
