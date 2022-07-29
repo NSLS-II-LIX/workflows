@@ -1,5 +1,5 @@
 import prefect
-from prefect import task, Flow, Parameter
+from prefect import Flow, Parameter, task
 from prefect.tasks.prefect import create_flow_run
 
 
@@ -15,7 +15,6 @@ with Flow("end-of-run-workflow") as flow:
     validation_flow = create_flow_run(
         flow_name="general-data-validation",
         project_name="LIX",
-        parameters={"beamline_acronym": "lix" ,"uid": uid}
+        parameters={"beamline_acronym": "lix", "uid": uid},
     )
     log_completion(upstream_tasks=[validation_flow])
-
