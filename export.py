@@ -324,7 +324,7 @@ def readShimadzuDatafile(fn, chapter_num=-1, return_all_sections=False):
             break
         if idx > 0:
             sects.append(lines[:idx])
-        lines = lines[idx + 1 :]
+        lines = lines[idx + 1 :]  # noqa: E203
 
     sections = {}
     for i in range(len(sects)):
