@@ -3,16 +3,14 @@ import os
 import re
 import shutil
 import time
-from collections import Mapping
 from enum import Enum
 
 import databroker
 import h5py
 import numpy as np
-import prefect
 from lixtools.atsas import gen_report
 from lixtools.hdf import h5sol_HPLC, h5sol_HT
-from prefect import Flow, Parameter, task
+from prefect import flow, task, get_run_logger
 from py4xs.hdf import h5exp, h5xs
 
 
@@ -46,7 +44,7 @@ def export_task(uids):
         This is the list of uids to be packed, processed, and validated.
     """
 
-    logger = prefect.context.get("logger")
+    logger = get_run_logger()
     logger.info(f"Uids: {uids}")
 
     # Connect to the tiled server, and get the set of runs from the set of uids.
@@ -77,9 +75,8 @@ def export_task(uids):
 
 
 # Make the Prefect Flow.
-# A separate command is needed to register it with the Prefect server.
-with Flow("export") as flow:
-    uids = Parameter("uids")
+@flow
+def export(uids):
     export_task(uids)
 
 
@@ -851,7 +848,7 @@ def _clean_dict(d):
     d = dict(d)
     for k, v in list(d.items()):
         # Store dictionaries as JSON strings.
-        if isinstance(v, Mapping):
+        if isinstance(v, dict):
             d[k] = _clean_dict(d[k])
             continue
         try:
