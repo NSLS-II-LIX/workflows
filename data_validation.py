@@ -2,7 +2,7 @@ from prefect import task, flow, get_run_logger
 import time as ttime
 from tiled.client import from_profile
 
-tiled_client = from_profile("nsls2", username=None)
+tiled_client = from_profile("nsls2")
 
 @task(retries=2, retry_delay_seconds=10)
 def read_all_streams(beamline_acronym, uid):
