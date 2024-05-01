@@ -48,7 +48,7 @@ def export_task(uids):
     logger.info(f"Uids: {uids}")
 
     # Connect to the tiled server, and get the set of runs from the set of uids.
-    tiled_client = databroker.from_profile("nsls2", username=None)["lix"]["raw"]
+    tiled_client = databroker.from_profile("nsls2")["lix"]["raw"]
     runs = [tiled_client[uid] for uid in uids]
     task_info = {run.start["uid"]: run.start["plan_name"] for run in runs}
 
